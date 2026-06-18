@@ -8,8 +8,8 @@ require("dotenv").config();
 app.use(cors());
 app.use(express.json());
 
-const uri =
-  "mongodb+srv://digital_life:deZfwRBUBu9yGuU6@cluster0.3036qk8.mongodb.net/?appName=Cluster0";
+const uri = "mongodb+srv://digital_life:deZfwRBUBu9yGuU6@cluster0.3036qk8.mongodb.net/?appName=Cluster0";
+  
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -34,18 +34,18 @@ async function run() {
     // const subscriptionCollection = db.collection("subscription");
 
     // Get all lessons Post
-    app.get("/allLessons", async (req, res) => {
+    app.get("/api/lessons", async (req, res) => {
       const result = await lessonsCollection.find().toArray();
       res.send(result);
     });
 
-    // // get jobs Data by jobsId
-    // app.get("/api/jobs/:id", async (req, res) => {
-    //   const id = req.params.id;
-    //   const query = { _id: new ObjectId(id) };
-    //   const result = await jobsCollection.findOne(query);
-    //   res.send(result);
-    // });
+    // get jobs Data by jobsId
+    app.get("/api/lesson/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await lessonsCollection.findOne(query);
+      res.send(result);
+    });
 
     // // company jobs data
     // app.get("/api/jobs", async (req, res) => {
