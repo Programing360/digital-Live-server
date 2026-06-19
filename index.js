@@ -47,15 +47,95 @@ async function run() {
       res.send(result);
     });
 
-    //my Lesson 
+    //my Lesson
     app.get("/api/lessons/:authorId", async (req, res) => {
       const { authorId } = req.params;
       const query = { "author.authorId": authorId };
       const result = await lessonsCollection.find(query).toArray();
       res.send(result);
     });
-    
 
+    // My Favorite Data
+    // app.get("/api/favorites/:userId", async (req, res) => {
+    //   const { userId } = req.params;
+
+    //   const favorites = await favoritesCollection
+    //     .aggregate([
+    //       {
+    //         $match: {
+    //           "author.authorId": userId,
+    //         },
+    //       },
+    //       {
+    //         $addFields: {
+    //           lessonObjId: {
+    //             $toObjectId: "$lessonId",
+    //           },
+    //         },
+    //       },
+    //       {
+    //         $lookup: {
+    //           from: "lessons",
+    //           localField: "author.authorId",
+    //           foreignField: "_id",
+    //           as: "lesson",
+    //         },
+    //       },
+    //       {
+    //         $unwind: "$lesson",
+    //       },
+    //     ])
+    //     .toArray();
+    //   res.send(favorites);
+    // });
+
+    app.get("/api/favorites/:userId", async (req, res) => {
+      const { userId } = req.params;
+
+      const result = await favoritesCollection
+        .aggregate([
+          {
+            $match: {
+              userId: userId,
+            },
+          },
+
+          // // lessonId (string) → ObjectId convert
+          // {
+          //   $addFields: {
+          //     lessonObjId: {
+          //       $toObjectId: "$lessonId",
+          //     },
+          //   },
+          // },
+
+          // join lessons collection
+          {
+            $lookup: {
+              from: "lessons",
+              localField: "lessonId",
+              foreignField: "_id",
+              as: "lesson",
+            },
+          },
+
+          {
+            $unwind: "$lesson",
+          },
+
+          // optional: clean output
+          {
+            $project: {
+              userId: 1,
+              saveAt: 1,
+              lesson: 1,
+            },
+          },
+        ])
+        .toArray();
+      // console.log(result);
+      res.send(result);
+    });
 
     // // company jobs data
     // app.get("/api/jobs", async (req, res) => {
@@ -98,13 +178,26 @@ async function run() {
 
     // Favorites Data Post
     app.post("/api/favorites", async (req, res) => {
-      const data = req.body;
-      console.log(data);
+      const { userId, lessonId } = req.body;
+      // console.log(data); 
+
+      const query = {lessonId: new ObjectId(lessonId)}
+
+      const exist = await favoritesCollection.findOne(query)
+      if(exist){
+        return res.status(409).send({
+          message: 'Already added to favorites',
+        })
+      }
+
+
       const newFavorites = {
-        ...data,
+        userId,
+        lessonId: new ObjectId(lessonId),
         saveAt: new Date(),
       };
 
+      console.log(newFavorites);
       const result = await favoritesCollection.insertOne(newFavorites);
       res.send(result);
     });
