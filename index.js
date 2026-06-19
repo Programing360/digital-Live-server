@@ -8,8 +8,8 @@ require("dotenv").config();
 app.use(cors());
 app.use(express.json());
 
-const uri = "mongodb+srv://digital_life:deZfwRBUBu9yGuU6@cluster0.3036qk8.mongodb.net/?appName=Cluster0";
-  
+const uri =
+  "mongodb+srv://digital_life:deZfwRBUBu9yGuU6@cluster0.3036qk8.mongodb.net/?appName=Cluster0";
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -28,7 +28,7 @@ async function run() {
     const db = client.db("digital_life");
     const userCollection = db.collection("user");
     const lessonsCollection = db.collection("lessons");
-    // const companyCollection = db.collection("company");
+    const favoritesCollection = db.collection("favorites");
     // const applicationCollection = db.collection("applicationCollect");
     // const planCollection = db.collection("plan");
     // const subscriptionCollection = db.collection("subscription");
@@ -39,13 +39,23 @@ async function run() {
       res.send(result);
     });
 
-    // get jobs Data by jobsId
+    // get lesson Data by Id
     app.get("/api/lesson/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await lessonsCollection.findOne(query);
       res.send(result);
     });
+
+    //my Lesson 
+    app.get("/api/lessons/:authorId", async (req, res) => {
+      const { authorId } = req.params;
+      const query = { "author.authorId": authorId };
+      const result = await lessonsCollection.find(query).toArray();
+      res.send(result);
+    });
+    
+
 
     // // company jobs data
     // app.get("/api/jobs", async (req, res) => {
@@ -74,24 +84,30 @@ async function run() {
     //   res.send(result);
     // });
 
-    // // job seeker apply
-    // app.post("/api/apply", async (req, res) => {
-    //   const applyData = req.body;
-    //   const newApplyData = {
-    //     ...applyData,
+    // job seeker apply
+    app.post("/api/createLessons", async (req, res) => {
+      const lessonData = req.body;
+      const newLessonData = {
+        ...lessonData,
 
-    //     createAt: new Date(),
-    //   };
-    //   const result = await applicationCollection.insertOne(newApplyData);
-    //   res.send(result);
-    // });
+        createAt: new Date(),
+      };
+      const result = await lessonsCollection.insertOne(newLessonData);
+      res.send(result);
+    });
 
-    // // company Data Post
-    // app.post("/api/company", async (req, res) => {
-    //   const data = req.body;
-    //   const result = await companyCollection.insertOne(data);
-    //   res.send(result);
-    // });
+    // Favorites Data Post
+    app.post("/api/favorites", async (req, res) => {
+      const data = req.body;
+      console.log(data);
+      const newFavorites = {
+        ...data,
+        saveAt: new Date(),
+      };
+
+      const result = await favoritesCollection.insertOne(newFavorites);
+      res.send(result);
+    });
 
     // // company job Data post
     // app.post("/api/jobs", async (req, res) => {
@@ -111,19 +127,19 @@ async function run() {
     //   res.send(result);
     // });
 
-    // // Company Data Update
-    // app.patch("/api/companyUpdate/:id", async (req, res) => {
-    //   const id = req.params.id;
-    //   const newData = req.body;
+    // myLesson Data Update
+    app.patch("/api/lessonUpdate/:id", async (req, res) => {
+      const id = req.params.id;
+      const newLessonData = req.body;
 
-    //   const query = { reqruiterId: id };
-    //   const updateInfo = {
-    //     $set: newData,
-    //   };
+      const query = { _id: new ObjectId(id) };
+      const updateInfo = {
+        $set: newLessonData,
+      };
 
-    //   const result = await companyCollection.updateOne(query, updateInfo);
-    //   res.send(result);
-    // });
+      const result = await lessonsCollection.updateOne(query, updateInfo);
+      res.send(result);
+    });
 
     // app.get("/api/planName", async (req, res) => {
     //   const query = {};
