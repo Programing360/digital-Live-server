@@ -35,9 +35,12 @@ async function run() {
 
     // Get all lessons Post
     app.get("/api/lessons", async (req, res) => {
+
       const result = await lessonsCollection.find().toArray();
       res.send(result);
     });
+
+    // app.get('/api/lesson')
 
     // get lesson Data by Id
     app.get("/api/lesson/:id", async (req, res) => {
@@ -56,38 +59,7 @@ async function run() {
     });
 
     // My Favorite Data
-    // app.get("/api/favorites/:userId", async (req, res) => {
-    //   const { userId } = req.params;
-
-    //   const favorites = await favoritesCollection
-    //     .aggregate([
-    //       {
-    //         $match: {
-    //           "author.authorId": userId,
-    //         },
-    //       },
-    //       {
-    //         $addFields: {
-    //           lessonObjId: {
-    //             $toObjectId: "$lessonId",
-    //           },
-    //         },
-    //       },
-    //       {
-    //         $lookup: {
-    //           from: "lessons",
-    //           localField: "author.authorId",
-    //           foreignField: "_id",
-    //           as: "lesson",
-    //         },
-    //       },
-    //       {
-    //         $unwind: "$lesson",
-    //       },
-    //     ])
-    //     .toArray();
-    //   res.send(favorites);
-    // });
+    
 
     app.get("/api/favorites/:userId", async (req, res) => {
       const { userId } = req.params;
@@ -99,15 +71,6 @@ async function run() {
               userId: userId,
             },
           },
-
-          // // lessonId (string) → ObjectId convert
-          // {
-          //   $addFields: {
-          //     lessonObjId: {
-          //       $toObjectId: "$lessonId",
-          //     },
-          //   },
-          // },
 
           // join lessons collection
           {
@@ -179,17 +142,17 @@ async function run() {
     // Favorites Data Post
     app.post("/api/favorites", async (req, res) => {
       const { userId, lessonId } = req.body;
-      // console.log(data); 
 
-      const query = {lessonId: new ObjectId(lessonId)}
-
-      const exist = await favoritesCollection.findOne(query)
-      if(exist){
+      const exist = await favoritesCollection.findOne({
+        userId,
+        lessonId: new ObjectId(lessonId)
+      });
+      
+      if (exist) {
         return res.status(409).send({
-          message: 'Already added to favorites',
-        })
+          message: "Already added to favorites",
+        });
       }
-
 
       const newFavorites = {
         userId,
@@ -197,7 +160,6 @@ async function run() {
         saveAt: new Date(),
       };
 
-      console.log(newFavorites);
       const result = await favoritesCollection.insertOne(newFavorites);
       res.send(result);
     });
@@ -220,11 +182,11 @@ async function run() {
     //   res.send(result);
     // });
 
-    // myLesson Data Update
+    // ---------------------------------------myLesson Data Update-------------------------------------------
+
     app.patch("/api/lessonUpdate/:id", async (req, res) => {
       const id = req.params.id;
       const newLessonData = req.body;
-
       const query = { _id: new ObjectId(id) };
       const updateInfo = {
         $set: newLessonData,
@@ -233,6 +195,66 @@ async function run() {
       const result = await lessonsCollection.updateOne(query, updateInfo);
       res.send(result);
     });
+
+    app.patch("/api/likes", async (req, res) => {
+      const { userId, lessonId } = req.body;
+
+      const query = {
+        _id: new ObjectId(lessonId),
+      };
+
+      const lesson = await lessonsCollection.findOne(query);
+
+      if (!lesson) {
+        return res.status(404).send({
+          message: "Lesson not found",
+        });
+      }
+
+      // Unlike
+      if (lesson?.likes?.includes(userId)) {
+        await lessonsCollection.updateOne(query, {
+          $pull: {
+            likes: userId,
+          },
+          $inc: {
+            likesCount: -1,
+          },
+        });
+
+        return res.send({
+          liked: false,
+          message: "Like removed",
+        });
+      }
+
+      // Like
+      await lessonsCollection.updateOne(query, {
+        $addToSet: {
+          likes: userId,
+        },
+        $inc: {
+          likesCount: 1,
+        },
+      });
+
+      return res.send({
+        liked: true,
+        message: "Lesson liked",
+      });
+    });
+
+
+    // --------------------------------------------Delete Section------------------------------------------------
+
+    app.delete('/api/favDelete/:id', async(req, res) => {
+      const {id} = req.params;
+      const query = {lessonId: new ObjectId(id)}
+      const result = await favoritesCollection.deleteOne(query)
+      res.send(result)
+    })
+    
+    
 
     // app.get("/api/planName", async (req, res) => {
     //   const query = {};
