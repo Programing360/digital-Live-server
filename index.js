@@ -35,7 +35,6 @@ async function run() {
 
     // Get all lessons Post
     app.get("/api/lessons", async (req, res) => {
-
       const result = await lessonsCollection.find().toArray();
       res.send(result);
     });
@@ -58,8 +57,27 @@ async function run() {
       res.send(result);
     });
 
+    // User Collection Get
+    app.get("/api/users", async (req, res) => {
+      const result = await userCollection.find().toArray();
+      res.send(result);
+    });
+
+    // Today lesson create
+    app.get("/api/newLesson", async (req, res) => {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+
+      const todaysNewLessons = await lessonsCollection.countDocuments({
+        createdAt: {
+          $gte: startOfToday,
+        },
+      });
+
+      res.send(todaysNewLessons);
+    });
+
     // My Favorite Data
-    
 
     app.get("/api/favorites/:userId", async (req, res) => {
       const { userId } = req.params;
@@ -96,7 +114,7 @@ async function run() {
           },
         ])
         .toArray();
-      // console.log(result);
+
       res.send(result);
     });
 
@@ -140,28 +158,77 @@ async function run() {
     });
 
     // Favorites Data Post
-    app.post("/api/favorites", async (req, res) => {
-      const { userId, lessonId } = req.body;
+    // app.post("/api/favorites", async (req, res) => {
+    //   const { userId, lessonId } = req.body;
 
-      const exist = await favoritesCollection.findOne({
+    //   const exist = await favoritesCollection.findOne({
+    //     userId,
+    //     lessonId: new ObjectId(lessonId),
+    //   });
+
+    //   if (exist) {
+    //     return res.status(409).send({
+    //       message: "Already added to favorites",
+    //     });
+    //   }
+
+    //   const newFavorites = {
+    //     userId,
+    //     lessonId: new ObjectId(lessonId),
+    //     saveAt: new Date(),
+    //   };
+
+    //   const result = await favoritesCollection.insertOne(newFavorites);
+    //   res.send(result);
+    // });
+    app.post("/api/favorites/toggle", async (req, res) => {
+      const { userId, lessonId, userName } = req.body;
+
+      const query = {
         userId,
-        lessonId: new ObjectId(lessonId)
-      });
-      
+        lessonId: new ObjectId(lessonId),
+      };
+
+      const exist = await favoritesCollection.findOne(query);
+
+      // REMOVE
       if (exist) {
-        return res.status(409).send({
-          message: "Already added to favorites",
+        await favoritesCollection.deleteOne(query);
+
+        await lessonsCollection.updateOne(
+          { _id: new ObjectId(lessonId) },
+          {
+            $pull: { favorites: userId },
+            $inc: { favoritesCount: -1 },
+          },
+        );
+
+        return res.send({
+          favorites: false,
+          message: "Removed from favorites",
         });
       }
 
-      const newFavorites = {
+      // ADD
+      await favoritesCollection.insertOne({
+        userName,
         userId,
         lessonId: new ObjectId(lessonId),
         saveAt: new Date(),
-      };
+      });
 
-      const result = await favoritesCollection.insertOne(newFavorites);
-      res.send(result);
+      await lessonsCollection.updateOne(
+        { _id: new ObjectId(lessonId) },
+        {
+          $addToSet: { favorites: userId },
+          $inc: { favoritesCount: 1 },
+        },
+      );
+
+      return res.send({
+        favorites: true,
+        message: "Added to favorites",
+      });
     });
 
     // // company job Data post
@@ -194,6 +261,24 @@ async function run() {
 
       const result = await lessonsCollection.updateOne(query, updateInfo);
       res.send(result);
+    });
+
+    // user role Update-----------------------
+    app.patch("/api/userRole", async (req, res) => {
+      const { role, userId } = req.body;
+      const query = { _id: new ObjectId(userId) };
+
+      if (!role || !userId) {
+        return res.status(400).send({ message: "Invalid data" });
+      }
+
+      const updateRole = {
+        $set: { role },
+      };
+
+      const result = await userCollection.updateOne(query, updateRole);
+      res.send(result);
+ 
     });
 
     app.patch("/api/likes", async (req, res) => {
@@ -244,17 +329,20 @@ async function run() {
       });
     });
 
-
     // --------------------------------------------Delete Section------------------------------------------------
 
-    app.delete('/api/favDelete/:id', async(req, res) => {
-      const {id} = req.params;
-      const query = {lessonId: new ObjectId(id)}
-      const result = await favoritesCollection.deleteOne(query)
-      res.send(result)
-    })
-    
-    
+    app.delete("/api/favDelete/:id", async (req, res) => {
+      const { id } = req.params;
+      const query = { lessonId: new ObjectId(id) };
+      const result = await favoritesCollection.deleteOne(query);
+      res.send(result);
+    });
+    app.delete("/api/lessonDelete/:id", async (req, res) => {
+      const { id } = req.params;
+      const query = { _id: new ObjectId(id) };
+      const result = await lessonsCollection.deleteOne(query);
+      res.send(result);
+    });
 
     // app.get("/api/planName", async (req, res) => {
     //   const query = {};
