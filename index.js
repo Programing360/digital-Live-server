@@ -31,18 +31,18 @@ async function run() {
     const favoritesCollection = db.collection("favorites");
     const reportCollection = db.collection("reportCollect");
     const sessionCollection = db.collection("session");
-    // const subscriptionCollection = db.collection("subscription");
+    const subscriptionCollection = db.collection("subscription");
 
     // Verification Center----------------------------------------------------
     const verifyToken = async (req, res, next) => {
       const authHeader = req.headers.authorization;
-      // console.log(authHeader);
+
       if (!authHeader) {
-        return req.status(401).send({ message: "unauthorize access" });
+        return res.status(401).send({ message: "unauthorize access" });
       }
       const token = authHeader.split(" ")[1];
       if (!token) {
-        return req.status(401).send({ message: "unauthorize access" });
+        return res.status(401).send({ message: "unauthorize access" });
       }
 
       const query = { token: token };
@@ -76,7 +76,7 @@ async function run() {
     };
 
     // Get all lessons Post
-    app.get("/api/lessons",verifyToken, async (req, res) => {
+    app.get("/api/lessons", async (req, res) => {
       const result = await lessonsCollection.find().toArray();
       res.send(result);
     });
@@ -100,13 +100,13 @@ async function run() {
     });
 
     // User Collection Get
-    app.get("/api/users", verifyToken,verifyAdmin, async (req, res) => {
+    app.get("/api/users", verifyToken, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
 
     // Today lesson create
-    app.get("/api/newLesson", verifyToken,verifyAdmin, async (req, res) => {
+    app.get("/api/newLesson", verifyToken, async (req, res) => {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
 
@@ -121,7 +121,7 @@ async function run() {
 
     // My Favorite Data
 
-    app.get("/api/favorites/:userId",verifyToken, async (req, res) => {
+    app.get("/api/favorites/:userId", verifyToken, async (req, res) => {
       const { userId } = req.params;
 
       const result = await favoritesCollection
@@ -162,25 +162,32 @@ async function run() {
 
     // report Get --------------------------------------------------
 
-    app.get("/api/reports",verifyToken,verifyAdmin, async (req, res) => {
+    app.get("/api/reports", verifyToken, verifyAdmin, async (req, res) => {
       const result = await reportCollection.find().toArray();
       res.send(result);
     });
-    
-    // lesson post
-    app.post("/api/createLessons",verifyToken,verifyUser, async (req, res) => {
-      const lessonData = req.body;
-      const newLessonData = {
-        ...lessonData,
 
-        createAt: new Date(),
-      };
-      const result = await lessonsCollection.insertOne(newLessonData);
-      res.send(result);
-    });
+    // --------------------------------------------Post Method--------------------------------------------------
+
+    // lesson post
+    app.post(
+      "/api/createLessons",
+      verifyToken,
+      verifyUser,
+      async (req, res) => {
+        const lessonData = req.body;
+        const newLessonData = {
+          ...lessonData,
+
+          createAt: new Date(),
+        };
+        const result = await lessonsCollection.insertOne(newLessonData);
+        res.send(result);
+      },
+    );
 
     // Favorites Data Post
-    app.post("/api/favorites/toggle",verifyToken, async (req, res) => {
+    app.post("/api/favorites/toggle", verifyToken, async (req, res) => {
       const { userId, lessonId, userName } = req.body;
 
       const query = {
@@ -231,7 +238,7 @@ async function run() {
     });
 
     // User Report Post -------------------
-    app.post("/api/report",verifyToken, async (req, res) => {
+    app.post("/api/report", verifyToken, async (req, res) => {
       const report = req.body;
       const newReport = {
         ...report,
@@ -240,6 +247,24 @@ async function run() {
 
       const result = await reportCollection.insertOne(newReport);
       res.send(result);
+    });
+
+    // user Subscription Post------------------
+    app.post("/api/subscription", verifyToken, async (req, res) => {
+      const userData = req.body;
+      const newUserData = {
+        ...userData,
+        createAt: new Date(),
+      };
+
+      const result = await subscriptionCollection.insertOne(newUserData);
+
+      const query = { email: userData.email };
+      const update = { $set: { isPlan: userData.plan } };
+
+      const updateResult = await userCollection.updateOne(query, update);
+
+      res.send(updateResult);
     });
 
     // ---------------------------------------myLesson Data Update-------------------------------------------
