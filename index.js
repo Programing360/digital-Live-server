@@ -29,12 +29,54 @@ async function run() {
     const userCollection = db.collection("user");
     const lessonsCollection = db.collection("lessons");
     const favoritesCollection = db.collection("favorites");
-    // const applicationCollection = db.collection("applicationCollect");
-    // const planCollection = db.collection("plan");
+    const reportCollection = db.collection("reportCollect");
+    const sessionCollection = db.collection("session");
     // const subscriptionCollection = db.collection("subscription");
 
+    // Verification Center----------------------------------------------------
+    const verifyToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      // console.log(authHeader);
+      if (!authHeader) {
+        return req.status(401).send({ message: "unauthorize access" });
+      }
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return req.status(401).send({ message: "unauthorize access" });
+      }
+
+      const query = { token: token };
+
+      const session = await sessionCollection.findOne(query);
+
+      const userId = session.userId;
+      const user = await userCollection.findOne({
+        _id: userId,
+      });
+
+      req.user = user;
+
+      // console.log(req.user === 'user');
+
+      next();
+    };
+
+    const verifyUser = (req, res, next) => {
+      if (req.user?.role !== "user") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      next();
+    };
+    const verifyAdmin = (req, res, next) => {
+      if (req.user?.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
+
     // Get all lessons Post
-    app.get("/api/lessons", async (req, res) => {
+    app.get("/api/lessons",verifyToken, async (req, res) => {
       const result = await lessonsCollection.find().toArray();
       res.send(result);
     });
@@ -42,7 +84,7 @@ async function run() {
     // app.get('/api/lesson')
 
     // get lesson Data by Id
-    app.get("/api/lesson/:id", async (req, res) => {
+    app.get("/api/lesson/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await lessonsCollection.findOne(query);
@@ -50,7 +92,7 @@ async function run() {
     });
 
     //my Lesson
-    app.get("/api/lessons/:authorId", async (req, res) => {
+    app.get("/api/lessons/:authorId", verifyToken, async (req, res) => {
       const { authorId } = req.params;
       const query = { "author.authorId": authorId };
       const result = await lessonsCollection.find(query).toArray();
@@ -58,13 +100,13 @@ async function run() {
     });
 
     // User Collection Get
-    app.get("/api/users", async (req, res) => {
+    app.get("/api/users", verifyToken,verifyAdmin, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
 
     // Today lesson create
-    app.get("/api/newLesson", async (req, res) => {
+    app.get("/api/newLesson", verifyToken,verifyAdmin, async (req, res) => {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
 
@@ -79,7 +121,7 @@ async function run() {
 
     // My Favorite Data
 
-    app.get("/api/favorites/:userId", async (req, res) => {
+    app.get("/api/favorites/:userId",verifyToken, async (req, res) => {
       const { userId } = req.params;
 
       const result = await favoritesCollection
@@ -118,35 +160,15 @@ async function run() {
       res.send(result);
     });
 
-    // // company jobs data
-    // app.get("/api/jobs", async (req, res) => {
-    //   const reqruiterId = req.query.reqruiterId;
-    //   const result = await jobsCollection.find({ reqruiterId }).toArray();
-    //   res.send(result);
-    // });
+    // report Get --------------------------------------------------
 
-    // // company Data Get
-    // app.get("/api/company", async (req, res) => {
-    //   const result = await companyCollection.find().toArray();
-    //   res.send(result);
-    // });
-
-    // // job seeker apply data get
-    // app.get("/api/applyData", async (req, res) => {
-    //   const query = {};
-    //   if (req.query.applicantId) {
-    //     query.applicantId = req.query.applicantId;
-    //   }
-    //   if (req.query.jobId) {
-    //     query.jobId = req.query.jobId;
-    //   }
-
-    //   const result = await applicationCollection.find(query).toArray();
-    //   res.send(result);
-    // });
-
-    // job seeker apply
-    app.post("/api/createLessons", async (req, res) => {
+    app.get("/api/reports",verifyToken,verifyAdmin, async (req, res) => {
+      const result = await reportCollection.find().toArray();
+      res.send(result);
+    });
+    
+    // lesson post
+    app.post("/api/createLessons",verifyToken,verifyUser, async (req, res) => {
       const lessonData = req.body;
       const newLessonData = {
         ...lessonData,
@@ -158,30 +180,7 @@ async function run() {
     });
 
     // Favorites Data Post
-    // app.post("/api/favorites", async (req, res) => {
-    //   const { userId, lessonId } = req.body;
-
-    //   const exist = await favoritesCollection.findOne({
-    //     userId,
-    //     lessonId: new ObjectId(lessonId),
-    //   });
-
-    //   if (exist) {
-    //     return res.status(409).send({
-    //       message: "Already added to favorites",
-    //     });
-    //   }
-
-    //   const newFavorites = {
-    //     userId,
-    //     lessonId: new ObjectId(lessonId),
-    //     saveAt: new Date(),
-    //   };
-
-    //   const result = await favoritesCollection.insertOne(newFavorites);
-    //   res.send(result);
-    // });
-    app.post("/api/favorites/toggle", async (req, res) => {
+    app.post("/api/favorites/toggle",verifyToken, async (req, res) => {
       const { userId, lessonId, userName } = req.body;
 
       const query = {
@@ -231,27 +230,21 @@ async function run() {
       });
     });
 
-    // // company job Data post
-    // app.post("/api/jobs", async (req, res) => {
-    //   const data = req.body;
+    // User Report Post -------------------
+    app.post("/api/report",verifyToken, async (req, res) => {
+      const report = req.body;
+      const newReport = {
+        ...report,
+        createAt: new Date(),
+      };
 
-    //   const company = await companyCollection.findOne({
-    //     recruiterId: data.recruiterId,
-    //   });
-    //   const newData = {
-    //     ...data,
-    //     CompanyName: company.name,
-    //     image: company.image,
-    //     createAt: new Date(),
-    //   };
-
-    //   const result = await jobsCollection.insertOne(newData);
-    //   res.send(result);
-    // });
+      const result = await reportCollection.insertOne(newReport);
+      res.send(result);
+    });
 
     // ---------------------------------------myLesson Data Update-------------------------------------------
 
-    app.patch("/api/lessonUpdate/:id", async (req, res) => {
+    app.patch("/api/lessonUpdate/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const newLessonData = req.body;
       const query = { _id: new ObjectId(id) };
@@ -264,7 +257,7 @@ async function run() {
     });
 
     // user role Update-----------------------
-    app.patch("/api/userRole", async (req, res) => {
+    app.patch("/api/userRole", verifyToken, verifyAdmin, async (req, res) => {
       const { role, userId } = req.body;
       const query = { _id: new ObjectId(userId) };
 
@@ -278,10 +271,10 @@ async function run() {
 
       const result = await userCollection.updateOne(query, updateRole);
       res.send(result);
- 
     });
 
-    app.patch("/api/likes", async (req, res) => {
+    // user like update ------------------------------------
+    app.patch("/api/likes", verifyToken, async (req, res) => {
       const { userId, lessonId } = req.body;
 
       const query = {
@@ -331,50 +324,71 @@ async function run() {
 
     // --------------------------------------------Delete Section------------------------------------------------
 
-    app.delete("/api/favDelete/:id", async (req, res) => {
-      const { id } = req.params;
-      const query = { lessonId: new ObjectId(id) };
-      const result = await favoritesCollection.deleteOne(query);
-      res.send(result);
-    });
-    app.delete("/api/lessonDelete/:id", async (req, res) => {
-      const { id } = req.params;
-      const query = { _id: new ObjectId(id) };
-      const result = await lessonsCollection.deleteOne(query);
-      res.send(result);
-    });
+    app.delete(
+      "/api/favDelete/:id",
+      verifyToken,
+      verifyUser,
+      async (req, res) => {
+        const { id } = req.params;
+        const query = { lessonId: new ObjectId(id) };
+        const result = await favoritesCollection.deleteOne(query);
+        res.send(result);
+      },
+    );
+    app.delete(
+      "/api/lessonDelete/:id",
+      verifyToken,
+      verifyUser,
+      async (req, res) => {
+        const { id } = req.params;
+        const query = { _id: new ObjectId(id) };
+        const result = await lessonsCollection.deleteOne(query);
+        res.send(result);
+      },
+    );
+    app.delete(
+      "/api/userDelete/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+        console.log(id);
+        const query = { _id: new ObjectId(id) };
+        const result = await userCollection.deleteOne(query);
+        res.send(result);
+      },
+    );
 
-    // app.get("/api/planName", async (req, res) => {
-    //   const query = {};
-    //   if (req.query.plan) {
-    //     query.name = req.query.plan;
-    //   }
+    // report Delete
+    app.delete(
+      "/api/reports/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+        const query = { _id: new ObjectId(id) };
 
-    //   const result = await planCollection.findOne(query);
-    //   res.send(result);
-    // });
+        const reportData = await reportCollection.findOne({
+          lessonId: id,
+        });
 
-    // app.post("/api/subscriptions", async (req, res) => {
-    //   const data = req.body;
-    //   const newData = {
-    //     ...data,
-    //     createAt: new Date(),
-    //   };
-    //   const result = await subscriptionCollection.insertOne(newData);
+        if (!reportData) {
+          return res.status(404).send({
+            message: "Report not found",
+          });
+        }
+        const lessonDelete = await lessonsCollection.deleteOne({
+          _id: new ObjectId(reportData.lessonId),
+        });
 
-    //   // update plan inside
+        const reportDelete = await reportCollection.deleteOne({
+          lessonId: id,
+        });
 
-    //   const filter = { email: data.email };
-
-    //   const updateInfo = {
-    //     $set: {
-    //       plan: data.planId,
-    //     },
-    //   };
-
-    //   const updateData = await userCollection.updateOne(filter, updateInfo);
-    //   res.send(updateData);
-    // });
+        // const result = await lessonsCollection.deleteOne(query);
+        res.send(lessonDelete, reportDelete);
+      },
+    );
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
