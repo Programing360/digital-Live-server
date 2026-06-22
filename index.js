@@ -118,6 +118,42 @@ async function run() {
       res.send(todaysNewLessons);
     });
 
+    // Reported/Flagged Lessons
+    app.get("/api/report", verifyToken, verifyAdmin, async (req, res) => {
+      const result = await reportCollection.find().toArray();
+      res.send(result);
+    });
+
+    // lesson and user Growth ---------------------------------------------
+    app.get("/api/growth", verifyToken, verifyAdmin, async (req, res) => {
+      const lessons = await lessonsCollection.find().toArray();
+
+      const lessonGrowth = Array(12).fill(0);
+
+      lessons.forEach((lesson) => {
+        const month = new Date(lesson.createAt).getMonth();
+
+        lessonGrowth[month]++;
+      });
+
+      // user Growth------------------------------------------------------
+      const users = await userCollection.find().toArray();
+
+      const userGrowth = Array(12).fill(0);
+
+      users.forEach((user) => {
+        const month = new Date(user.createdAt).getMonth();
+        userGrowth[month]++;
+      });
+
+      const totalGrowth = {
+        lesson: lessonGrowth,
+        user: userGrowth,
+      };
+
+      res.send(totalGrowth);
+    });
+
     // My Favorite Data
 
     app.get("/api/favorites/:userId", verifyToken, async (req, res) => {
@@ -239,13 +275,28 @@ async function run() {
     // User Report Post -------------------
     app.post("/api/report", verifyToken, async (req, res) => {
       const report = req.body;
+
       const newReport = {
         ...report,
         createAt: new Date(),
       };
 
       const result = await reportCollection.insertOne(newReport);
-      res.send(result);
+
+      const query = { _id: new ObjectId(report.lessonId) };
+
+      const updateDoc = {
+        $set: {
+          flagged: true,
+        },
+      };
+
+      const updateLesson = await lessonsCollection.updateOne(
+        query,
+        updateDoc,
+      );
+
+      res.send(updateLesson);
     });
 
     // user Subscription Post------------------
