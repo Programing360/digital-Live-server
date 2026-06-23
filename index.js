@@ -1,4 +1,5 @@
 const express = require("express");
+const moment = require("moment");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const cors = require("cors");
@@ -22,7 +23,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("digital_life");
     const userCollection = db.collection("user");
@@ -31,6 +32,7 @@ async function run() {
     const reportCollection = db.collection("reportCollect");
     const sessionCollection = db.collection("session");
     const subscriptionCollection = db.collection("subscription");
+    const commentCollection = db.collection("comments");
 
     // Verification Center----------------------------------------------------
     const verifyToken = async (req, res, next) => {
@@ -106,16 +108,55 @@ async function run() {
 
     // Today lesson create
     app.get("/api/newLesson", verifyToken, async (req, res) => {
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
+      try {
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
 
-      const todaysNewLessons = await lessonsCollection.countDocuments({
-        createdAt: {
-          $gte: startOfToday,
-        },
-      });
+        const todaysNewLessons = await lessonsCollection.countDocuments({
+          createdAt: { $gte: startOfToday },
+        });
 
-      res.send(todaysNewLessons);
+        res.json({
+          success: true,
+          count: todaysNewLessons,
+        });
+      } catch (err) {
+        res.status(500).json({
+          success: false,
+          message: "Server error",
+        });
+      }
+    });
+
+    // get comment ------------------------------------------------
+    // app.get("/api/comment/:userId", async (req, res) => {
+    //   const { userId } = req.params;
+
+    //   const query = { userId: userId };
+    //   const result = await commentCollection.find(query).toArray();
+
+    //   res.send(result);
+    // });
+
+    app.get("/api/comment/:userId", async (req, res) => {
+      try {
+        const { userId } = req.params;
+
+        const query = { userId: userId };
+        const comments = await commentCollection.find(query).toArray();
+
+        const formattedComments = comments.map((c) => {
+          return {
+            ...c,
+        
+            formattedDate: c.createAt ? moment(c.createAt).format("hh:mm A - DD MMM YYYY") : "Just now"
+          };
+        });
+
+        res.send(formattedComments);
+      } catch (error) {
+        res.status(500).send({ message: "Server error" });
+      }
     });
 
     // Reported/Flagged Lessons
@@ -199,6 +240,13 @@ async function run() {
 
     app.get("/api/reports", verifyToken, verifyAdmin, async (req, res) => {
       const result = await reportCollection.find().toArray();
+      res.send(result);
+    });
+
+    // Featured lesson get ----------------------------------------------------
+    app.get("/api/featured", async (req, res) => {
+      const query = { isFeatured: true };
+      const result = await lessonsCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -291,10 +339,7 @@ async function run() {
         },
       };
 
-      const updateLesson = await lessonsCollection.updateOne(
-        query,
-        updateDoc,
-      );
+      const updateLesson = await lessonsCollection.updateOne(query, updateDoc);
 
       res.send(updateLesson);
     });
@@ -397,6 +442,72 @@ async function run() {
       });
     });
 
+    // Comment Post of user----------------------------------------------
+    app.post("/api/comment", async (req, res) => {
+      const userInfo = req.body;
+      const newInfo = {
+        ...userInfo,
+        createAt: new Date(),
+      };
+      console.log(newInfo);
+      const result = await commentCollection.insertOne(newInfo);
+      res.send(result);
+    });
+
+    // Inappropriate lesson verified---------------------------------------------------
+    app.patch(
+      "/api/inappropriateLessonVerified/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+        const lesson = await lessonsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (lesson.verified) {
+          return res.status(404).send({
+            success: true,
+            message: "Lesson already verified",
+          });
+        }
+
+        if (!lesson) {
+          return res.status(404).send({
+            success: false,
+            message: "Lesson not found",
+          });
+        }
+
+        if (!lesson.flagged) {
+          return res.status(400).send({
+            success: false,
+            message: "Lesson is not verified",
+          });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            verified: true,
+            flagged: false,
+          },
+        };
+
+        const result = await lessonsCollection.updateOne(query, updateDoc);
+
+        await reportCollection.deleteMany({
+          lessonId: id,
+        });
+
+        res.send({
+          success: true,
+          deletedCount: result.modifiedCount,
+          message: "Lesson verified successfully",
+        });
+      },
+    );
+
     // --------------------------------------------Delete Section------------------------------------------------
 
     app.delete(
@@ -434,6 +545,48 @@ async function run() {
       },
     );
 
+    // Inappropriate lesson deleted---------------------------------------------------
+    app.delete(
+      "/api/inappropriateLessonDelete/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const lesson = await lessonsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!lesson) {
+          return res.status(404).send({
+            success: false,
+            message: "Lesson not found",
+          });
+        }
+
+        if (!lesson.flagged) {
+          return res.status(400).send({
+            success: false,
+            message: "Lesson is not flagged",
+          });
+        }
+
+        const result = await lessonsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        await reportCollection.deleteOne({
+          lessonId: id,
+        });
+
+        res.send({
+          success: true,
+          deletedCount: result.deletedCount,
+          message: "Lesson deleted successfully",
+        });
+      },
+    );
+
     // report Delete
     app.delete(
       "/api/reports/:id",
@@ -466,7 +619,7 @@ async function run() {
     );
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
     );
