@@ -156,25 +156,41 @@ async function run() {
     // PAGINATION DATA------------------
     app.get("/api/lessonsPage", async (req, res) => {
       try {
-  
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 6;
+        const search = req.query.search;
+        const category = req.query.category;
+        // console.log(category);
 
+        const query = {};
+
+        if (search) {
+          query.search = {
+            title: {
+              $regex: search,
+            },
+          };
+        }
+
+        if (category) {
+          query.category = {
+            $in: category.split(","),
+          };
+        }
+      
       
         const skip = (page - 1) * limit;
-        console.log(skip);
-     
-        const totalItems = await lessonsCollection.countDocuments();
+
+        const totalItems = await lessonsCollection.countDocuments(query);
+
         const totalPages = Math.ceil(totalItems / limit);
-        console.log(totalPages);
-      
+
         const lessons = await lessonsCollection
-          .find()
+          .find(query)
           .skip(skip)
           .limit(limit)
           .toArray();
-
-
+        // console.log(lessons);
         res.send({
           lessons,
           totalPages,
@@ -186,7 +202,21 @@ async function run() {
       }
     });
 
-    
+    // app.get("/api/search", async (req, res) => {
+    //   const search = req.query.search;
+
+    //   const query = {
+    //     title: {
+    //       $regex: search,
+    //       $options: "i",
+    //     },
+    //   };
+    //   // console.log(query);
+    //   const result = await lessonsCollection.find(query).toArray();
+    //   res.send(result);
+
+    // });
+
     // Reported/Flagged Lessons
     app.get("/api/report", verifyToken, verifyAdmin, async (req, res) => {
       const result = await reportCollection.find().toArray();
