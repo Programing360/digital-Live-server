@@ -129,27 +129,21 @@ async function run() {
     });
 
     // get comment ------------------------------------------------
-    // app.get("/api/comment/:userId", async (req, res) => {
-    //   const { userId } = req.params;
 
-    //   const query = { userId: userId };
-    //   const result = await commentCollection.find(query).toArray();
-
-    //   res.send(result);
-    // });
-
-    app.get("/api/comment/:userId", async (req, res) => {
+    app.get("/api/comment/:id", verifyToken, verifyUser, async (req, res) => {
       try {
-        const { userId } = req.params;
+        const { id } = req.params;
 
-        const query = { userId: userId };
+        const query = { lessonId: id };
         const comments = await commentCollection.find(query).toArray();
 
         const formattedComments = comments.map((c) => {
           return {
             ...c,
-        
-            formattedDate: c.createAt ? moment(c.createAt).format("hh:mm A - DD MMM YYYY") : "Just now"
+
+            formattedDate: c.createAt
+              ? moment(c.createAt).format("hh:mm A - DD MMM YYYY")
+              : "Just now",
           };
         });
 
@@ -159,6 +153,40 @@ async function run() {
       }
     });
 
+    // PAGINATION DATA------------------
+    app.get("/api/lessonsPage", async (req, res) => {
+      try {
+  
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 6;
+
+      
+        const skip = (page - 1) * limit;
+        console.log(skip);
+     
+        const totalItems = await lessonsCollection.countDocuments();
+        const totalPages = Math.ceil(totalItems / limit);
+        console.log(totalPages);
+      
+        const lessons = await lessonsCollection
+          .find()
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+
+        res.send({
+          lessons,
+          totalPages,
+          currentPage: page,
+          totalItems,
+        });
+      } catch (error) {
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
+
+    
     // Reported/Flagged Lessons
     app.get("/api/report", verifyToken, verifyAdmin, async (req, res) => {
       const result = await reportCollection.find().toArray();
@@ -443,13 +471,13 @@ async function run() {
     });
 
     // Comment Post of user----------------------------------------------
-    app.post("/api/comment", async (req, res) => {
+    app.post("/api/comment", verifyToken, async (req, res) => {
       const userInfo = req.body;
       const newInfo = {
         ...userInfo,
         createAt: new Date(),
       };
-      console.log(newInfo);
+
       const result = await commentCollection.insertOne(newInfo);
       res.send(result);
     });
@@ -538,7 +566,6 @@ async function run() {
       verifyAdmin,
       async (req, res) => {
         const { id } = req.params;
-        console.log(id);
         const query = { _id: new ObjectId(id) };
         const result = await userCollection.deleteOne(query);
         res.send(result);
