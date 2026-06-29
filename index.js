@@ -57,18 +57,16 @@ async function run() {
 
       req.user = user;
 
-      // console.log(req.user === 'user');
-
       next();
     };
 
     const verifyUser = (req, res, next) => {
-      if (req.user?.role !== "user") {
+      if (req.user?.role !== "user" && req.user?.role !== "admin") {
         return res.status(403).send({ message: "forbidden access" });
       }
-
       next();
     };
+
     const verifyAdmin = (req, res, next) => {
       if (req.user?.role !== "admin") {
         return res.status(403).send({ message: "forbidden access" });
@@ -88,13 +86,78 @@ async function run() {
     app.get("/api/lesson/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
+
       const result = await lessonsCollection.findOne(query);
       res.send(result);
+    });
+
+    app.get("/api/lessons/most-saved", async (req, res) => {
+      try {
+        const mostSaved = await lessonsCollection.aggregate([
+          {
+            $project: {
+              title: 1,
+              imageUrl: 1,
+              favoritesCount: { $size: { $ifNull: ["$favorites", []] } },
+            },
+          },
+          { $sort: { favoritesCount: -1 } }, // Highest favorites first
+          { $limit: 10 }, // Top 5 assets
+        ]).toArray();
+        // console.log(mostSaved);
+        // Format data to match your UI's expected structural design
+        const formattedData = await mostSaved.map((lesson) => ({
+          
+          id: lesson._id,
+          title: lesson.title,
+          img: lesson.imageUrl,
+          meta: `${lesson.favoritesCount} Active Saves`,
+        }));
+        // console.log('formateData', formattedData);
+        res.status(200).json(formattedData);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch popular assets" });
+      }
+    });
+
+    app.get("/api/topContributors", async (req, res) => {
+      try {
+        const result = await lessonsCollection
+          .aggregate([
+            {
+              $group: {
+                // 1. Group directly by the nested path
+                _id: "$author.authorId",
+
+                // 2. These work perfectly now because the fields weren't wiped out by a $project stage
+                authorName: { $first: "$author.name" },
+                authorEmail: { $first: "$author.email" },
+                authorImage: { $first: "$author.image" },
+
+                totalLessons: { $sum: 1 },
+              },
+            },
+            {
+              $sort: {
+                totalLessons: -1,
+              },
+            },
+            {
+              $limit: 10,
+            },
+          ])
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to fetch top contributors" });
+      }
     });
 
     //my Lesson
     app.get("/api/lessons/:authorId", verifyToken, async (req, res) => {
       const { authorId } = req.params;
+
       const query = { "author.authorId": authorId };
       const result = await lessonsCollection.find(query).toArray();
       res.send(result);
@@ -160,15 +223,13 @@ async function run() {
         const limit = parseInt(req.query.limit) || 6;
         const search = req.query.search;
         const category = req.query.category;
-        // console.log(category);
 
         const query = {};
 
         if (search) {
-          query.search = {
-            title: {
-              $regex: search,
-            },
+          query.title = {
+            $regex: search,
+            $options: "i",
           };
         }
 
@@ -177,8 +238,7 @@ async function run() {
             $in: category.split(","),
           };
         }
-      
-      
+
         const skip = (page - 1) * limit;
 
         const totalItems = await lessonsCollection.countDocuments(query);
@@ -190,7 +250,7 @@ async function run() {
           .skip(skip)
           .limit(limit)
           .toArray();
-        // console.log(lessons);
+
         res.send({
           lessons,
           totalPages,
@@ -201,21 +261,6 @@ async function run() {
         res.status(500).send({ message: "Server error", error });
       }
     });
-
-    // app.get("/api/search", async (req, res) => {
-    //   const search = req.query.search;
-
-    //   const query = {
-    //     title: {
-    //       $regex: search,
-    //       $options: "i",
-    //     },
-    //   };
-    //   // console.log(query);
-    //   const result = await lessonsCollection.find(query).toArray();
-    //   res.send(result);
-
-    // });
 
     // Reported/Flagged Lessons
     app.get("/api/report", verifyToken, verifyAdmin, async (req, res) => {
@@ -382,24 +427,128 @@ async function run() {
     app.post("/api/report", verifyToken, async (req, res) => {
       const report = req.body;
 
-      const newReport = {
+      const filter = {
+        lessonId: report.lessonId,
+      };
+
+      const existingLesson = await reportCollection.findOne(filter);
+
+      if (existingLesson) {
+        const alreadyReported = existingLesson.reports.some(
+          (item) => item.email === report.reports[0].email,
+        );
+
+        if (alreadyReported) {
+          return res.status(400).send({
+            success: false,
+            message: "You have already reported this lesson",
+          });
+        }
+
+        // নতুন report add করো
+        await reportCollection.updateOne(filter, {
+          $push: {
+            reports: report.reports[0],
+          },
+          $inc: {
+            reportCount: 1,
+          },
+        });
+
+        return res.send({
+          success: true,
+          message: "Report added successfully",
+        });
+      }
+
+      // প্রথম report হলে
+      await reportCollection.insertOne({
         ...report,
+        reportCount: 1,
         createAt: new Date(),
-      };
+      });
 
-      const result = await reportCollection.insertOne(newReport);
-
-      const query = { _id: new ObjectId(report.lessonId) };
-
-      const updateDoc = {
-        $set: {
-          flagged: true,
+      await lessonsCollection.updateOne(
+        { _id: new ObjectId(report.lessonId) },
+        {
+          $set: {
+            flagged: true,
+          },
         },
-      };
+      );
 
-      const updateLesson = await lessonsCollection.updateOne(query, updateDoc);
+      res.send({
+        success: true,
+        message: "Report submitted successfully",
+      });
 
-      res.send(updateLesson);
+      // const report = req.body;
+      // const filter = { lessonId: report.lessonId };
+      // if (filter) {
+      //   const updateReport = {
+      //     $push: {
+      //       reports: report.reports[0],
+      //     },
+      //     $inc: {
+      //       reportCount: 1,
+      //     },
+      //   };
+
+      //   const same = await reportCollection(filter, updateReport);
+      //   console.log("same", same);
+
+      //   return res.send({
+      //     success: true,
+      //     message: "Report added successfully",
+      //   });
+      // }
+
+      // const q = {
+      //   lessonId: report.lessonId,
+      //   reports: {
+      //     $elemMatch: {
+      //       email: report.reports[0].email,
+      //     },
+      //   },
+      // };
+
+      // const existingReport = await reportCollection.findOne(q);
+
+      // // console.log(existingReport);
+
+      // if (existingReport) {
+      //   return res.status(400).send({
+      //     message: "You have already reported this lesson",
+      //   });
+
+      //   console.log("filter", filter);
+
+      //   // console.log("existingReport", existingReport);
+      // } else {
+      //   const newReport = {
+      //     ...report,
+      //     createAt: new Date(),
+      //   };
+
+      //   await reportCollection.insertOne(newReport);
+
+      //   const query = { _id: new ObjectId(report.lessonId) };
+
+      //   const updateDoc = {
+      //     $set: {
+      //       flagged: true,
+      //     },
+      //   };
+
+      //   // console.log(result);
+
+      //   const updateLesson = await lessonsCollection.updateOne(
+      //     query,
+      //     updateDoc,
+      //   );
+
+      //   res.send(updateLesson);
+      // }
     });
 
     // user Subscription Post------------------
@@ -425,13 +574,46 @@ async function run() {
     app.patch("/api/lessonUpdate/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const newLessonData = req.body;
+      // console.log(newLessonData);
+
       const query = { _id: new ObjectId(id) };
       const updateInfo = {
-        $set: newLessonData,
+        $set: {
+          visibility: newLessonData.visibility,
+        },
       };
 
       const result = await lessonsCollection.updateOne(query, updateInfo);
       res.send(result);
+    });
+
+    app.patch("/api/feature/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const query = { _id: new ObjectId(id) };
+
+      // বর্তমান lesson খুঁজে বের করো
+      const lesson = await lessonsCollection.findOne(query);
+
+      if (!lesson) {
+        return res.status(404).send({ message: "Lesson not found" });
+      }
+
+      const newStatus = !lesson.isFeatured;
+
+      // Toggle true <-> false
+      const result = await lessonsCollection.updateOne(query, {
+        $set: {
+          isFeatured: newStatus,
+        },
+      });
+
+      res.send({
+        success: true,
+        isFeatured: newStatus,
+        message: newStatus
+          ? "Lesson added to featured successfully."
+          : "Lesson removed from featured successfully.",
+      });
     });
 
     // user role Update-----------------------
@@ -523,17 +705,17 @@ async function run() {
           _id: new ObjectId(id),
         });
 
-        if (lesson.verified) {
-          return res.status(404).send({
-            success: true,
-            message: "Lesson already verified",
-          });
-        }
-
         if (!lesson) {
           return res.status(404).send({
             success: false,
             message: "Lesson not found",
+          });
+        }
+
+        if (lesson.verified && lesson.flagged === false) {
+          return res.status(404).send({
+            success: true,
+            message: "Lesson already verified",
           });
         }
 
@@ -610,9 +792,11 @@ async function run() {
       async (req, res) => {
         const { id } = req.params;
 
-        const lesson = await lessonsCollection.findOne({
+        const query = {
           _id: new ObjectId(id),
-        });
+        };
+
+        const lesson = await lessonsCollection.findOne(query);
 
         if (!lesson) {
           return res.status(404).send({
@@ -620,11 +804,10 @@ async function run() {
             message: "Lesson not found",
           });
         }
-
-        if (!lesson.flagged) {
+        if (!lesson.flagged === false) {
           return res.status(400).send({
             success: false,
-            message: "Lesson is not flagged",
+            message: "Lesson is not issue",
           });
         }
 
@@ -641,6 +824,32 @@ async function run() {
           deletedCount: result.deletedCount,
           message: "Lesson deleted successfully",
         });
+      },
+    );
+
+    app.delete(
+      "/api/report/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const query = { lessonId: id };
+
+        const filter = {
+          _id: new ObjectId(id),
+        };
+
+        const updateDoc = {
+          $set: {
+            flagged: false,
+          },
+        };
+
+        await lessonsCollection.updateOne(filter, updateDoc);
+
+        const result = await reportCollection.deleteOne(query);
+        res.send(result);
       },
     );
 
